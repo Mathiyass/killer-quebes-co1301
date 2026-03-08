@@ -70,7 +70,7 @@ enum BlockState { Alive, Hit, Dead };
 //=============================================================================
 // MAIN FUNCTION — entry point for the KillerQuebes game
 //=============================================================================
-void main()
+int main()
 {
     //=========================================================================
     // ENGINE INITIALISATION — create the 3D engine in windowed mode
@@ -390,6 +390,11 @@ void main()
                 marble->SetPosition(kMarbleStartX, kMarbleStartY, kMarbleStartZ);
                 marbleVX = kZeroVelocity;
                 marbleVZ = kZeroVelocity;
+
+                // Re-attach arrow to dummy
+                arrow->AttachToParent(dummy);
+                arrow->SetPosition(kZeroVelocity, kZeroVelocity, kArrowOffsetZ);
+
                 gameState = Ready;
             }
             else if (marble->GetZ() > kBehindBlocksZ)
@@ -397,6 +402,11 @@ void main()
                 marble->SetPosition(kMarbleStartX, kMarbleStartY, kMarbleStartZ);
                 marbleVX = kZeroVelocity;
                 marbleVZ = kZeroVelocity;
+
+                // Re-attach arrow to dummy
+                arrow->AttachToParent(dummy);
+                arrow->SetPosition(kZeroVelocity, kZeroVelocity, kArrowOffsetZ);
+
                 gameState = Ready;
             }
         }
@@ -457,6 +467,7 @@ void main()
     // ENGINE CLEANUP — release engine resources before exiting
     //=========================================================================
     myEngine->Delete();
+    return 0;
 }
 
 //=============================================================================
