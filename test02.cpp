@@ -1,5 +1,5 @@
 // Killer Quebes! - CO1301 Games Concepts Assignment
-// Name: [YOUR NAME]  Student ID: [YOUR ID]
+// Name: Agent  Student ID: 12345678
 //
 // 3D arcade game: launch marbles at evil cubes! Implements all milestones:
 // Milestone 1 (40%+): Scene setup, 4-state game model, basic collision
@@ -12,7 +12,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
+#include <algorithm>
 using namespace tle;
+using namespace std;
 
 // =============================================================================
 // CONSTANTS - All game parameters (no magic numbers)
@@ -28,6 +30,20 @@ const float kBlockHalf          = 5.0f;    // Half-width for collision
 const float kFirstRowZ          = 130.0f;  // Z of the first row
 const float kRowSpacing         = 12.0f;   // Z spacing between rows
 const float kSecondRowZ         = 142.0f;  // Z of the second row
+
+const float kSkyboxY                 = -850.0f; // Skybox vertical offset
+const float kArrowZOffset            = -18.0f;  // Arrow relative to aim dummy
+const float kBlockYNormal            = 0.0f;    // Normal Y pos for blocks
+const float kBlockYHidden            = -100.0f; // Sunk position for unseen stealth blocks
+const float kBlockYDeadThreshold     = -15.0f;  // Mark block dead when sunk below this
+const float kBlockYDead              = -1000.0f;// Send dead blocks here
+const float kMarbleRollFactor        = 5.0f;    // Visual roll rotation multiplier
+const float kBarrierPushOut          = 2.0f;    // Separation push scalar on barriers
+const float kAngryExplosionRange     = 15.0f;   // Radius for angry block explosion
+const float kMarbleMinZ              = 0.0f;    // Bounds Check Z min
+const float kMarbleMaxZ              = 200.0f;  // Bounds Check Z max
+const float kStickyPenaltyMult       = 0.5f;    // Stuck speed handicap
+const float kEpsilon                 = 0.001f;  // Avoid division by zero
 
 // Marble
 const float kMarbleRadius       = 2.0f;    // Marble radius (diameter ~4)
@@ -137,7 +153,7 @@ int ReadyNextMarble(Marble marbles[], int numMarbles, float marbleRadius);
 // =============================================================================
 // MAIN FUNCTION
 // =============================================================================
-void main()
+int main()
 {
     // Seed random for special block placement
     srand(static_cast<unsigned int>(time(0)));
@@ -146,9 +162,7 @@ void main()
     I3DEngine* myEngine = New3DEngine(kTLX);
     myEngine->StartWindowed();
 
-    // UPDATE THIS PATH to where your model files are located
-    myEngine->AddMediaFolder(
-        "C:\\Users\\ASUS\\OneDrive\\Desktop\\Assignment 1 2025-26 models\\Media");
+    // Default to the working directory for models
     myEngine->AddMediaFolder("./Media");
 
     // ---- LOAD MESHES ----
@@ -165,7 +179,7 @@ void main()
     IModel* floor = floorMesh->CreateModel();
 
     // Skybox at spec position
-    IModel* skybox = skyboxMesh->CreateModel(0.0f, -850.0f, 0.0f);
+    IModel* skybox = skyboxMesh->CreateModel(0.0f, kSkyboxY, 0.0f);
 
     // Manual camera: (0, 30, -70), rotated X by 12 degrees
     ICamera* myCamera = myEngine->CreateCamera(kManual, kCamX, kCamY, kCamZ);
@@ -177,7 +191,7 @@ void main()
                        (kBlocksPerRow - 1) * kBlockGap;
     float blockStartX = -totalWidth / 2.0f + kBlockHalf;
 
-    Block blocks[kMaxBlocks];
+    Block blocks[kMaxBlocks] = {};
     int numBlocks = 0;
     int numRows = 0;
 
@@ -188,8 +202,8 @@ void main()
     numRows++;
 
     // ---- CREATE BARRIERS (Milestone 2) ----
-    IModel* leftBarriers[kBarriersPerSide];
-    IModel* rightBarriers[kBarriersPerSide];
+    IModel* leftBarriers[kBarriersPerSide] = {nullptr};
+    IModel* rightBarriers[kBarriersPerSide] = {nullptr};
 
     for (int i = 0; i < kBarriersPerSide; i++)
     {
@@ -200,13 +214,13 @@ void main()
         // Wasp stripes on the 4 sections furthest from camera (highest Z)
         if (i >= kBarriersPerSide - 4)
         {
-            leftBarriers[i]->SetSkin("barrier1a");
-            rightBarriers[i]->SetSkin("barrier1a");
+            leftBarriers[i]->SetSkin("barrier1a.jpg");
+            rightBarriers[i]->SetSkin("barrier1a.jpg");
         }
         else
         {
-            leftBarriers[i]->SetSkin("barrier1");
-            rightBarriers[i]->SetSkin("barrier1");
+            leftBarriers[i]->SetSkin("barrier1.jpg");
+            rightBarriers[i]->SetSkin("barrier1.jpg");
         }
     }
 
@@ -215,10 +229,10 @@ void main()
     IModel* aimDummy = dummyMesh->CreateModel(0.0f, kMarbleRadius, 0.0f);
     IModel* arrow    = arrowMesh->CreateModel();
     arrow->AttachToParent(aimDummy);
-    arrow->MoveLocalZ(-18.0f);  // Arrow 18 units behind marble
+    arrow->MoveLocalZ(kArrowZOffset);  // Arrow 18 units behind marble
 
     // ---- CREATE MARBLES (Milestone 4: 4 starting marbles) ----
-    Marble marbles[kMaxMarbles];
+    Marble marbles[kMaxMarbles] = {};
     int numMarbles = kStartMarbles;
 
     for (int i = 0; i < kStartMarbles; i++)
@@ -260,6 +274,11 @@ void main()
             myEngine->Stop();
         }
 
+        if (!myEngine->IsRunning())
+        {
+            break; 
+        }
+
         // ---- BLOCK MOVEMENT (70%+): blocks advance slowly ----
         if (gameState != STATE_OVER)
         {
@@ -281,7 +300,7 @@ void main()
                         // Turn all marbles red
                         for (int m = 0; m < numMarbles; m++)
                         {
-                            marbles[m].model->SetSkin("glass_red");
+                            marbles[m].model->SetSkin("glass_red.jpg");
                         }
                     }
                 }
@@ -313,14 +332,14 @@ void main()
                     {
                         // Reappear: flash bright briefly
                         blocks[i].model->SetPosition(
-                            blocks[i].model->GetX(), 0.0f,
+                            blocks[i].model->GetX(), kBlockYNormal,
                             blocks[i].model->GetZ());
                     }
                     else
                     {
                         // Sink away
                         blocks[i].model->SetPosition(
-                            blocks[i].model->GetX(), -100.0f,
+                            blocks[i].model->GetX(), kBlockYHidden,
                             blocks[i].model->GetZ());
                     }
                 }
@@ -333,10 +352,10 @@ void main()
             if (blocks[i].state == BLOCK_SINKING)
             {
                 blocks[i].model->MoveY(-kSinkSpeed);
-                if (blocks[i].model->GetY() < -15.0f)
+                if (blocks[i].model->GetY() < kBlockYDeadThreshold)
                 {
                     blocks[i].state = BLOCK_DEAD;
-                    blocks[i].model->SetPosition(0.0f, -1000.0f, 0.0f);
+                    blocks[i].model->SetPosition(0.0f, kBlockYDead, 0.0f);
                     blocks[i].visible = false;
                 }
             }
@@ -441,7 +460,7 @@ void main()
 
                     // Rolling effect (85%+)
                     float speed = sqrtf(effVX * effVX + effVZ * effVZ);
-                    marbles[m].model->RotateLocalX(speed * 5.0f);
+                    marbles[m].model->RotateLocalX(speed * kMarbleRollFactor);
 
                     float mx = marbles[m].model->GetX();
                     float mz = marbles[m].model->GetZ();
@@ -458,7 +477,7 @@ void main()
                             ResolveCollision(marbles[m].velX, marbles[m].velZ,
                                 mx, mz, lbx, lbz, kBarrierHalfW, kBarrierHalfD);
                             // Push marble out of barrier
-                            marbles[m].model->MoveX(marbles[m].velX * 2.0f);
+                            marbles[m].model->MoveX(marbles[m].velX * kBarrierPushOut);
                         }
 
                         // Right barriers
@@ -469,7 +488,7 @@ void main()
                         {
                             ResolveCollision(marbles[m].velX, marbles[m].velZ,
                                 mx, mz, rbx, rbz, kBarrierHalfW, kBarrierHalfD);
-                            marbles[m].model->MoveX(marbles[m].velX * 2.0f);
+                            marbles[m].model->MoveX(marbles[m].velX * kBarrierPushOut);
                         }
                     }
 
@@ -497,7 +516,7 @@ void main()
                                 if (blocks[i].state == BLOCK_ALIVE)
                                 {
                                     blocks[i].state = BLOCK_HIT;
-                                    blocks[i].model->SetSkin("tiles_red");
+                                    blocks[i].model->SetSkin("tiles_red.jpg");
                                     blocks[i].hitsLeft--;
                                 }
                                 else if (blocks[i].state == BLOCK_HIT)
@@ -514,11 +533,11 @@ void main()
                                 }
                                 else if (blocks[i].hitsLeft == 1)
                                 {
-                                    blocks[i].model->SetSkin("tiles_red");
+                                    blocks[i].model->SetSkin("tiles_red.jpg");
                                 }
                                 else
                                 {
-                                    blocks[i].model->SetSkin("tiles_half");
+                                    blocks[i].model->SetSkin("tiles_half.jpg");
                                 }
                                 break;
 
@@ -530,7 +549,7 @@ void main()
                                 }
                                 else
                                 {
-                                    blocks[i].model->SetSkin("tiles_red");
+                                    blocks[i].model->SetSkin("tiles_red.jpg");
                                     blocks[i].state = BLOCK_HIT;
                                 }
                                 break;
@@ -540,7 +559,7 @@ void main()
                                 {
                                     // Turn green on first hit
                                     blocks[i].state = BLOCK_HIT;
-                                    blocks[i].model->SetSkin("tiles_green");
+                                    blocks[i].model->SetSkin("tiles_green.jpg");
                                     blocks[i].hitsLeft--;
                                 }
                                 else if (blocks[i].state == BLOCK_HIT)
@@ -558,7 +577,7 @@ void main()
                                         marbles[s].stuck = false;
                                         marbles[s].stuckTimer = 0;
                                         marbles[s].speedMult = 1.0f;
-                                        marbles[s].model->SetSkin("glass_blue");
+                                        marbles[s].model->SetSkin("glass_blue.jpg");
                                         numMarbles++;
                                     }
                                     blocks[i].state = BLOCK_SINKING;
@@ -572,7 +591,7 @@ void main()
                                     marbles[m].stuckTimer = kStickyDuration;
                                     marbles[m].state = MARBLE_STUCK;
                                     blocks[i].state = BLOCK_HIT;
-                                    blocks[i].model->SetSkin("tiles_red");
+                                    blocks[i].model->SetSkin("tiles_red.jpg");
                                 }
                                 else
                                 {
@@ -593,7 +612,7 @@ void main()
                                         {
                                             float dx = fabsf(blocks[n].model->GetX() - ex);
                                             float dz = fabsf(blocks[n].model->GetZ() - ez);
-                                            if (dx < 15.0f && dz < 15.0f)
+                                            if (dx < kAngryExplosionRange && dz < kAngryExplosionRange)
                                             {
                                                 blocks[n].state = BLOCK_SINKING;
                                             }
@@ -604,7 +623,7 @@ void main()
                                 else if (blocks[i].hitsLeft <= 3)
                                 {
                                     // Swell up when nearly dead (visual warning)
-                                    blocks[i].model->SetSkin("tiles_red");
+                                    blocks[i].model->SetSkin("tiles_red.jpg");
                                 }
                                 break;
                             }
@@ -618,8 +637,15 @@ void main()
                                 marbles[m].model->MoveZ(marbles[m].velZ);
                             }
 
-                            // Enter CONTACT pseudo-state to check win
-                            gameState = STATE_CONTACT;
+                            // Eliminate original broken STATE_CONTACT transition gap
+                            if (CountDestroyedBlocks(blocks, numBlocks) >= numBlocks)
+                            {
+                                gameState = STATE_OVER;
+                                for (int sm = 0; sm < numMarbles; sm++)
+                                {
+                                    marbles[sm].model->SetSkin("glass_green.jpg");
+                                }
+                            }
                         }
                     }
 
@@ -628,7 +654,7 @@ void main()
                     mz = marbles[m].model->GetZ();
 
                     // Marble returns to front (Z < 0) or goes past blocks
-                    if (mz < 0.0f || mz > 200.0f)
+                    if (mz < kMarbleMinZ || mz > kMarbleMaxZ)
                     {
                         // Snap to home slot
                         float slotX = (marbles[m].slot -
@@ -657,7 +683,7 @@ void main()
                     {
                         marbles[m].stuck = false;
                         marbles[m].state = MARBLE_IN_FLIGHT;
-                        marbles[m].speedMult = 0.5f; // Half speed after
+                        marbles[m].speedMult = kStickyPenaltyMult; // Half speed after
                     }
                 }
             }
@@ -687,7 +713,7 @@ void main()
                     gameState = STATE_OVER;
                     // Player wins: turn surviving marbles green
                     for (int m = 0; m < numMarbles; m++)
-                        marbles[m].model->SetSkin("glass_green");
+                        marbles[m].model->SetSkin("glass_green.jpg");
                 }
                 else
                 {
@@ -706,18 +732,7 @@ void main()
         // -----------------------------------------------------------------------
         case STATE_CONTACT:
         {
-            // Check if ALL blocks are destroyed -> player wins
-            if (CountDestroyedBlocks(blocks, numBlocks) >= numBlocks)
-            {
-                gameState = STATE_OVER;
-                for (int m = 0; m < numMarbles; m++)
-                    marbles[m].model->SetSkin("glass_green");
-            }
-            else
-            {
-                // Continue firing
-                gameState = STATE_FIRING;
-            }
+            // Fully phased out to prevent stutter; handled linearly at collision resolution
             break;
         }
 
@@ -739,6 +754,7 @@ void main()
 
     // ---- CLEANUP ----
     myEngine->Delete();
+    return 0;
 }
 
 // =============================================================================
@@ -751,13 +767,8 @@ bool SphereBoxCollision(float sX, float sZ, float bX, float bZ,
                         float sRadius, float bHalfW, float bHalfD)
 {
     // Find closest point on box to sphere centre
-    float closestX = sX;
-    float closestZ = sZ;
-
-    if (closestX < bX - bHalfW) closestX = bX - bHalfW;
-    if (closestX > bX + bHalfW) closestX = bX + bHalfW;
-    if (closestZ < bZ - bHalfD) closestZ = bZ - bHalfD;
-    if (closestZ > bZ + bHalfD) closestZ = bZ + bHalfD;
+    float closestX = std::max(bX - bHalfW, std::min(sX, bX + bHalfW));
+    float closestZ = std::max(bZ - bHalfD, std::min(sZ, bZ + bHalfD));
 
     // Distance from closest point to sphere centre
     float dx = sX - closestX;
@@ -772,20 +783,16 @@ void ResolveCollision(float& velX, float& velZ, float sX, float sZ,
                       float bX, float bZ, float bHalfW, float bHalfD)
 {
     // Find closest point on box to sphere
-    float closestX = sX;
-    float closestZ = sZ;
+    float closestX = std::max(bX - bHalfW, std::min(sX, bX + bHalfW));
+    float closestZ = std::max(bZ - bHalfD, std::min(sZ, bZ + bHalfD));
 
-    if (closestX < bX - bHalfW) closestX = bX - bHalfW;
-    if (closestX > bX + bHalfW) closestX = bX + bHalfW;
-    if (closestZ < bZ - bHalfD) closestZ = bZ - bHalfD;
-    if (closestZ > bZ + bHalfD) closestZ = bZ + bHalfD;
 
     // Normal vector from closest point to sphere centre
     float nx = sX - closestX;
     float nz = sZ - closestZ;
     float len = sqrtf(nx * nx + nz * nz);
 
-    if (len > 0.001f)
+    if (len > kEpsilon)
     {
         // Normalise
         nx /= len;
@@ -793,8 +800,14 @@ void ResolveCollision(float& velX, float& velZ, float sX, float sZ,
 
         // Reflect: v' = v - 2(v.n)n
         float dot = velX * nx + velZ * nz;
-        velX -= 2.0f * dot * nx;
-        velZ -= 2.0f * dot * nz;
+        
+        // Critical Logic Fix: Only reflect if moving INTO the surface.
+        // Prevents getting stuck dynamically. 
+        if (dot < 0.0f) 
+        {
+            velX -= 2.0f * dot * nx;
+            velZ -= 2.0f * dot * nz;
+        }
     }
     else
     {
@@ -829,7 +842,7 @@ void CreateBlockRow(IMesh* blockMesh, Block blocks[], int& numBlocks,
 
         float xPos = startX + col * (kBlockWidth + kBlockGap);
 
-        blocks[numBlocks].model   = blockMesh->CreateModel(xPos, 0.0f, z);
+        blocks[numBlocks].model   = blockMesh->CreateModel(xPos, kBlockYNormal, z);
         blocks[numBlocks].state   = BLOCK_ALIVE;
         blocks[numBlocks].visible = true;
         blocks[numBlocks].flashTimer = 0.0f;
@@ -844,35 +857,35 @@ void CreateBlockRow(IMesh* blockMesh, Block blocks[], int& numBlocks,
             // Angry block (10% chance)
             blocks[numBlocks].type     = TYPE_ANGRY;
             blocks[numBlocks].hitsLeft = kAngryBlockHits;
-            blocks[numBlocks].model->SetSkin("tiles_red");
+            blocks[numBlocks].model->SetSkin("tiles_red.jpg");
         }
         else if (randomVal == 1)
         {
             // Hard block (10% chance)
             blocks[numBlocks].type     = TYPE_HARD;
             blocks[numBlocks].hitsLeft = kHardBlockHits;
-            blocks[numBlocks].model->SetSkin("tiles_half");
+            blocks[numBlocks].model->SetSkin("tiles_half.jpg");
         }
         else if (randomVal == 2)
         {
             // Stealth block (10% chance)
             blocks[numBlocks].type     = TYPE_STEALTH;
             blocks[numBlocks].hitsLeft = 2;
-            blocks[numBlocks].model->SetSkin("tiles_bright");
+            blocks[numBlocks].model->SetSkin("tiles_bright.jpg");
         }
         else if (randomVal == 3)
         {
             // Bonus block (10% chance)
             blocks[numBlocks].type     = TYPE_BONUS;
             blocks[numBlocks].hitsLeft = 2;
-            blocks[numBlocks].model->SetSkin("tiles_green");
+            blocks[numBlocks].model->SetSkin("tiles_green.jpg");
         }
         else if (randomVal == 4)
         {
             // Sticky block (10% chance)
             blocks[numBlocks].type     = TYPE_STICKY;
             blocks[numBlocks].hitsLeft = 2;
-            blocks[numBlocks].model->SetSkin("tiles_pink");
+            blocks[numBlocks].model->SetSkin("tiles_pink.jpg");
         }
         else
         {
