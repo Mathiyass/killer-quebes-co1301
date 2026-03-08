@@ -1,0 +1,40 @@
+# Visual Studio files
+.vs/
+*.suo
+*.user
+*.sdf
+*.opensdf
+*.db
+*.opendb
+*.VC.db
+ipch/
+
+# Build outputs
+Debug/
+Release/
+x64/
+x86/
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.obj
+*.log
+*.tlog/
+*.cache
+*.idb
+*.lastbuildstate
+
+# TL-Engine runtime files (auto-copied by build)
+IrrlichtDebug.dll
+Irrlicht.dll
+
+# OS files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Temporary files
+*.tmp
+*.bak
+~$*
