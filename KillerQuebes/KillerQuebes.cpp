@@ -58,6 +58,7 @@ const float kFloorX           = 0.0f;         // Floor X position
 const float kFloorY           = 0.0f;         // Floor Y position
 const float kFloorZ           = 0.0f;         // Floor Z position
 const float kSkyboxX          = 0.0f;         // Skybox X position
+const float kSkyboxZ          = 0.0f;         // Skybox Z position
 const float kDegreesToRadians = kPI / 180.0f; // Conversion factor from degrees to radians
 
 //=============================================================================
@@ -91,7 +92,7 @@ void main()
     // FLOOR AND SKYBOX — create the ground plane and sky environment
     //=========================================================================
     IModel* floor  = floorMesh->CreateModel(kFloorX, kFloorY, kFloorZ);
-    IModel* skybox = skyboxMesh->CreateModel(kSkyboxX, kSkyboxY, kFloorZ);
+    IModel* skybox = skyboxMesh->CreateModel(kSkyboxX, kSkyboxY, kSkyboxZ);
 
     //=========================================================================
     // CAMERA — positioned above and behind the marble, tilted downward
@@ -263,14 +264,19 @@ void main()
             float marblePosX = marble->GetX();
             float marblePosZ = marble->GetZ();
 
+            // Flag to track whether a block collision has already been handled
+            // this frame to prevent double-hit bugs from overlapping blocks
+            bool blockCollisionHandled = false;
+
             //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             // BLOCK COLLISION — loop through all blocks in the 2D array
             // Skip dead blocks. On collision, change block state and reverse
             // the appropriate velocity component based on which face was hit.
+            // Only process one block collision per frame to avoid double reversal.
             //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-            for (int row = 0; row < kNumBlockRows; row++)
+            for (int row = 0; row < kNumBlockRows && !blockCollisionHandled; row++)
             {
-                for (int col = 0; col < kNumBlockCols; col++)
+                for (int col = 0; col < kNumBlockCols && !blockCollisionHandled; col++)
                 {
                     // Skip any block that has already been destroyed
                     if (blockState[row][col] == Dead)
@@ -318,6 +324,9 @@ void main()
 
                         // Transition to Contact state for dead-block check
                         gameState = Contact;
+
+                        // Mark collision as handled to exit both loops
+                        blockCollisionHandled = true;
                     }
                 }
             }
@@ -374,6 +383,7 @@ void main()
             //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             // BOUNDARY CHECK — if marble goes behind blocks or past start line
             // Reset marble to starting position and return to Ready state
+            // Uses else-if since marble cannot be past both boundaries at once
             //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
             if (marble->GetZ() < kMarbleStartZ)
             {
@@ -382,8 +392,7 @@ void main()
                 marbleVZ = kZeroVelocity;
                 gameState = Ready;
             }
-
-            if (marble->GetZ() > kBehindBlocksZ)
+            else if (marble->GetZ() > kBehindBlocksZ)
             {
                 marble->SetPosition(kMarbleStartX, kMarbleStartY, kMarbleStartZ);
                 marbleVX = kZeroVelocity;
@@ -394,10 +403,12 @@ void main()
 
         //---------------------------------------------------------------------
         // CONTACT STATE — resolves immediately in the same frame
+        // This is a separate if-check (not else-if) so it runs in the same
+        // frame that the collision was detected, as required by the spec.
         // Counts how many blocks are dead. If all are dead, game is won.
         // Otherwise, return to Firing state to continue play.
         //---------------------------------------------------------------------
-        else if (gameState == Contact)
+        if (gameState == Contact)
         {
             // Count the number of dead blocks across all rows and columns
             int deadBlockCount = 0;
